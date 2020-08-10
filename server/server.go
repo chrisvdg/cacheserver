@@ -35,8 +35,8 @@ func (s *Server) ListenAndServe() {
 	r := mux.NewRouter()
 	h := newHandlers(s.c.ProxyTarget)
 
-	// r.HandleFunc("/", h.CacheHandler).Methods("GET")
-	r.HandleFunc("/", h.ProxyHandler)
+	// r.PathPrefix("/").HandlerFunc(h.CacheHandler).Methods("GET")
+	r.PathPrefix("/").HandlerFunc(h.ProxyHandler)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
