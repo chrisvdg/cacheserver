@@ -5,11 +5,20 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
 
 // New creates a new server instance
 func New(c *Config) (*Server, error) {
+	if c.ProxyTarget == "" {
+		return nil, errors.New("No proxy target provided")
+	}
+
+	err := testTarget(c.ProxyTarget)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to connect to proxy target")
+	}
 
 	return &Server{
 		c: c,
@@ -24,9 +33,9 @@ type Server struct {
 // ListenAndServe listens for new requests and serves them
 func (s *Server) ListenAndServe() {
 	r := mux.NewRouter()
-	h := newHandlers()
+	h := newHandlers(s.c.ProxyTarget)
 
-	r.HandleFunc("/", h.CacheHandler).Methods("GET")
+	// r.HandleFunc("/", h.CacheHandler).Methods("GET")
 	r.HandleFunc("/", h.ProxyHandler)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -56,4 +65,9 @@ func listenAndServeTLS(ctx context.Context, cancel func(), addr string, tls *TLS
 	defer cancel()
 	log.Infof("https server listening on: localhost%s\n", addr)
 	log.Print(http.ListenAndServeTLS(addr, tls.CertFile, tls.KeyFile, handler))
+}
+
+func testTarget(url string) error {
+	_, err := http.Get(url)
+	return err
 }

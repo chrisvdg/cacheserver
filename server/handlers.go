@@ -1,6 +1,7 @@
 package server
 
 import (
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -9,9 +10,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func newHandlers() *handlers {
+func newHandlers(target string) *handlers {
 	return &handlers{
-		http: &http.Client{},
+		proxyBaseURL: target,
+		http:         &http.Client{},
 	}
 }
 
@@ -48,10 +50,16 @@ func (h *handlers) ProxyHandler(res http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		h.handleError(res, req, errors.Wrap(err, "target request failed"))
 	}
-	_ = targetResp
+	defer targetResp.Body.Close()
 
-	// TODO: write target response to response to the client
+	for name, values := range targetResp.Header {
+		for _, v := range values {
+			res.Header().Add(name, v)
+		}
+	}
+	res.WriteHeader(targetResp.StatusCode)
 
+	io.Copy(res, targetResp.Body)
 }
 
 func (h *handlers) handleError(res http.ResponseWriter, req *http.Request, err error) {
