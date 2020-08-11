@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/chrisvdg/cacheserver/cache"
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -19,15 +20,21 @@ func New(c *Config) (*Server, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to connect to proxy target")
 	}
+	cache, err := cache.New(c.BackendFile, 0)
+	if err != nil {
+		return nil, err
+	}
 
 	return &Server{
-		c: c,
+		c:     c,
+		cache: cache,
 	}, nil
 }
 
 // Server represents a server instance
 type Server struct {
-	c *Config
+	c     *Config
+	cache *cache.Cache
 }
 
 // ListenAndServe listens for new requests and serves them
@@ -35,7 +42,7 @@ func (s *Server) ListenAndServe() {
 	r := mux.NewRouter()
 	h := newHandlers(s.c.ProxyTarget)
 
-	// r.PathPrefix("/").HandlerFunc(h.CacheHandler).Methods("GET")
+	r.PathPrefix("/").HandlerFunc(h.CacheHandler).Methods("GET")
 	r.PathPrefix("/").HandlerFunc(h.ProxyHandler)
 
 	ctx, cancel := context.WithCancel(context.Background())

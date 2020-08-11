@@ -13,6 +13,7 @@ func main() {
 	tlsCert := pflag.StringP("tlscert", "c", "", "TLS certificate file path")
 	tlsOnly := pflag.BoolP("tlsonly", "s", false, "Only serve TLS")
 	target := pflag.StringP("proxytarget", "p", "", "Target server to proxy")
+	backendFile := pflag.StringP("backendfile", "f", "./config.data", "backend metadata file")
 	verbose := pflag.BoolP("verbose", "v", false, "Verbose output")
 	pflag.Parse()
 
@@ -35,6 +36,7 @@ func main() {
 			CertFile: *tlsCert,
 		},
 		ProxyTarget: *target,
+		BackendFile: *backendFile,
 		Verbose:     *verbose,
 	}
 

@@ -7,6 +7,7 @@ type Config struct {
 	TLSOnly       bool
 	TLS           *TLSConfig
 	Verbose       bool
+	BackendFile   string
 	ProxyTarget   string
 }
 
