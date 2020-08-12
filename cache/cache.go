@@ -38,44 +38,16 @@ type Cache struct {
 
 // CopyFromCache returns reader where the cached (or proxied) body is written to
 func (c *Cache) CopyFromCache(res http.ResponseWriter, req *http.Request) error {
-	e, err := c.b.FindEntry(req)
+	e, err := c.b.findEntry(req)
 	if err != nil && err != ErrEntryNotFound {
 		return errors.Wrap(err, "failed to search entry")
 	}
 	if err == ErrEntryNotFound {
-		return c.newEntry(res, req)
+		e, err = c.b.addEntry(req.URL.Path, req.URL.Query())
+		if err != nil {
+			return err
+		}
 	}
 
-	switch e.Status {
-	case StateInit:
-		return c.initEntry(res, req)
-	case StateInProgress:
-		return c.progressEntry(res, req)
-	case StateCached:
-		return c.cashedEntry(res, req)
-	case StateNoCache:
-		return ErrNoCache
-	}
-
-	return nil
-}
-
-func (c *Cache) newEntry(res http.ResponseWriter, req *http.Request) error {
-
-	return nil
-}
-
-func (c *Cache) initEntry(res http.ResponseWriter, req *http.Request) error {
-
-	return nil
-}
-
-func (c *Cache) progressEntry(res http.ResponseWriter, req *http.Request) error {
-
-	return nil
-}
-
-func (c *Cache) cashedEntry(res http.ResponseWriter, req *http.Request) error {
-
-	return nil
+	return c.b.proxy(e, res)
 }

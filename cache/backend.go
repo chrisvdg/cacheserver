@@ -25,29 +25,29 @@ func newBackend(filePath string) (*backend, error) {
 	}
 	return &backend{
 		filePath: filePath,
-		data:     make(map[string]Entry, 0),
+		data:     make(map[string]*Entry, 0),
 	}, nil
 }
 
 type backend struct {
 	filePath string
-	data     map[string]Entry
-	m        sync.Mutex
+	data     map[string]*Entry
+	m        *sync.Mutex
 }
 
-func (b *backend) FindEntry(req *http.Request) (*Entry, error) {
-	for _, e := range b.data {
+func (b *backend) findEntry(req *http.Request) (string, error) {
+	for entryID, e := range b.data {
 		if e.Path == req.URL.Path {
 			if reflect.DeepEqual(e.Params, req.URL.Query()) {
-				return &e, nil
+				return entryID, nil
 			}
 		}
 	}
 
-	return nil, ErrEntryNotFound
+	return "", ErrEntryNotFound
 }
 
-func (b *backend) AddEntry(path string, params url.Values) (string, Entry, error) {
+func (b *backend) addEntry(path string, params url.Values) (string, error) {
 	b.m.Lock()
 	defer b.m.Unlock()
 
@@ -57,16 +57,16 @@ func (b *backend) AddEntry(path string, params url.Values) (string, Entry, error
 		Created: JSONTime(time.Now()),
 		Status:  StateInit,
 	}
-	id := b.getID()
-	b.data[id] = e
+	id := b.generateID()
+	b.data[id] = &e
 	err := b.save()
 
-	return id, e, err
+	return id, err
 }
 
-// Generates a unique cache entry ID
+// generateID generates a unique cache entry ID
 // Make sure to execute this when backend is locked
-func (b *backend) getID() string {
+func (b *backend) generateID() string {
 	for {
 		id := generateID(25)
 		for i := range b.data {
@@ -78,32 +78,50 @@ func (b *backend) getID() string {
 	}
 }
 
-// Entry represents a backend entry
-type Entry struct {
-	ID string `json:"id"`
-	// Path represents the request path of the cached entry
-	Path string `json:"path"`
-	// Params represents the URL request params of the cached entry
-	Params url.Values `json:"params"`
-	// Created is the timestamp for when the entry was created
-	Created JSONTime `json:"created"`
-	// Status  represents the entry status
-	Status State `json:"Status"`
+func (b *backend) setEntryState(id string, state State) error {
+	e, ok := b.data[id]
+	if !ok {
+		return ErrEntryNotFound
+	}
+	e.m.Lock()
+	defer e.m.Unlock()
+	e.Status = state
+	return nil
 }
 
-// State represents the cache state of an entry
-type State string
+func (b *backend) getEntryState(id string) (State, error) {
+	e, ok := b.data[id]
+	if !ok {
+		return "", ErrEntryNotFound
+	}
+	e.m.Lock()
+	defer e.m.Unlock()
+	return e.Status, nil
+}
 
-const (
-	// StateInit represents an initialized cache entry state
-	StateInit State = "init"
-	// StateInProgress represents a cache entry that is being cached
-	StateInProgress State = "in progress"
-	// StateCached represents a cache entry that has been cached
-	StateCached State = "cached"
-	// StateNoCache represents a cache entry that does not need to be cached
-	StateNoCache State = "no cache"
-)
+func (b *backend) proxy(id string, res http.ResponseWriter) error {
+	state, err := b.getEntryState(id)
+	if err != nil {
+		return err
+	}
+
+	switch state {
+	case StateInit:
+	case StateInProgress:
+	case StateCached:
+	case StateNoCache:
+		return ErrNoCache
+	default:
+		return errors.Errorf("State %s not supported", state)
+	}
+
+	return nil
+}
+
+func (b *backend) entryInit(id, res http.ResponseWriter) error {
+
+	return nil
+}
 
 // JSONTime is a time.Time wrapper that JSON (un)marshals into a unix timestamp
 type JSONTime time.Time
