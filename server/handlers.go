@@ -60,6 +60,8 @@ func (h *handlers) proxy(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	targetReq.URL.RawQuery = req.URL.RawQuery
+
 	for name, values := range req.Header {
 		for _, v := range values {
 			targetReq.Header.Add(name, v)

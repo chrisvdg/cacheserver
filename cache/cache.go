@@ -14,8 +14,8 @@ var (
 // New returns a new Cache instance
 // backendFilePath represents the file on the filesystem where the metadata is stored
 // minSize represents the minimum size of the body to be cached (0 caches everything)
-func New(backendFilePath string, minSize int) (*Cache, error) {
-	b, err := newBackend(backendFilePath)
+func New(backendFilePath string, proxyURL string, minSize int) (*Cache, error) {
+	b, err := newBackend(backendFilePath, proxyURL)
 	if err != nil {
 		return nil, err
 	}
@@ -49,5 +49,5 @@ func (c *Cache) CopyFromCache(res http.ResponseWriter, req *http.Request) error 
 		}
 	}
 
-	return c.b.proxy(e, res)
+	return c.b.proxy(e, res, req)
 }

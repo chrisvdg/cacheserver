@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"reflect"
 	"strconv"
 	"sync"
@@ -19,20 +20,24 @@ var (
 	ErrEntryNotFound = errors.New("cache entry not found")
 )
 
-func newBackend(filePath string) (*backend, error) {
+func newBackend(filePath string, proxyURL string) (*backend, error) {
 	if filePath == "" {
 		return nil, errors.New("backend file path is empty")
 	}
 	return &backend{
-		filePath: filePath,
-		data:     make(map[string]*Entry, 0),
+		targetBaseURL: proxyURL,
+		filePath:      filePath,
+		data:          make(map[string]*Entry, 0),
+		http:          &http.Client{},
 	}, nil
 }
 
 type backend struct {
-	filePath string
-	data     map[string]*Entry
-	m        *sync.Mutex
+	targetBaseURL string
+	filePath      string
+	data          map[string]*Entry
+	m             *sync.Mutex
+	http          *http.Client
 }
 
 func (b *backend) findEntry(req *http.Request) (string, error) {
@@ -99,7 +104,7 @@ func (b *backend) getEntryState(id string) (State, error) {
 	return e.Status, nil
 }
 
-func (b *backend) proxy(id string, res http.ResponseWriter) error {
+func (b *backend) proxy(id string, res http.ResponseWriter, req *http.Request) error {
 	state, err := b.getEntryState(id)
 	if err != nil {
 		return err
@@ -107,7 +112,9 @@ func (b *backend) proxy(id string, res http.ResponseWriter) error {
 
 	switch state {
 	case StateInit:
+		b.entryInit(id, res, req)
 	case StateInProgress:
+		b.entryInProgress(id, res)
 	case StateCached:
 	case StateNoCache:
 		return ErrNoCache
@@ -118,9 +125,70 @@ func (b *backend) proxy(id string, res http.ResponseWriter) error {
 	return nil
 }
 
-func (b *backend) entryInit(id, res http.ResponseWriter) error {
+func (b *backend) entryInit(id string, res http.ResponseWriter, req *http.Request) error {
+	e, ok := b.data[id]
+	if !ok {
+		return ErrEntryNotFound
+	}
+	e.m.Lock()
+	tURL, err := b.getProxyURL(e.Path)
+	if err != nil {
+		e.m.Unlock()
+		return errors.Wrap(err, "failed to get target proxy URL")
+	}
+	defer req.Body.Close()
+	targetReq, err := http.NewRequest("GET", tURL, req.Body)
+	targetReq.URL.RawQuery = req.URL.RawQuery
+	for name, values := range req.Header {
+		for _, v := range values {
+			targetReq.Header.Add(name, v)
+		}
+	}
+	targetResp, err := b.http.Do(targetReq)
+	if err != nil {
+		e.m.Unlock()
+		return errors.Wrap(err, "target request failed")
+	}
+	e.resp, err = newResponse(targetResp.Header, targetResp.Body, targetResp.StatusCode)
+	e.m.Unlock()
+	if err != nil {
+		return errors.Wrap(err, "failed to create cached response")
+	}
+
+	return b.entryInProgress(id, res)
+}
+
+func (b *backend) entryInProgress(id string, res http.ResponseWriter) error {
+	e, ok := b.data[id]
+	if !ok {
+		return ErrEntryNotFound
+	}
+
+	for name, values := range e.resp.headers {
+		for _, v := range values {
+			res.Header().Add(name, v)
+		}
+	}
+	res.WriteHeader(e.resp.responseCode)
+
+	// TODO: Copy body
 
 	return nil
+}
+
+func (b *backend) entryCached(id string, res http.ResponseWriter) error {
+	// Get reader from cached file and write to response writer body
+
+	return nil
+}
+
+func (b *backend) getProxyURL(reqPath string) (string, error) {
+	u, err := url.Parse(b.targetBaseURL)
+	if err != nil {
+		return "", errors.Wrap(err, "Failed to fetch path from request")
+	}
+	u.Path = path.Join(u.Path, reqPath)
+	return u.String(), nil
 }
 
 // JSONTime is a time.Time wrapper that JSON (un)marshals into a unix timestamp

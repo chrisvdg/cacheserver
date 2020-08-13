@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/chrisvdg/cacheserver/cache"
 	"github.com/gorilla/mux"
@@ -20,7 +22,7 @@ func New(c *Config) (*Server, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to connect to proxy target")
 	}
-	cache, err := cache.New(c.BackendFile, 0)
+	cache, err := cache.New(c.BackendFile, c.ProxyTarget, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -63,18 +65,27 @@ func (s *Server) ListenAndServe() {
 // listenAndServe serves a plain http webserver
 func listenAndServe(ctx context.Context, cancel func(), addr string, handler http.Handler) {
 	defer cancel()
-	log.Infof("http server listening on: localhost%s\n", addr)
-	log.Print(http.ListenAndServe(addr, handler))
+	addrStr := getAddrString(addr)
+	log.Infof("http server listening on: http://%s\n", addrStr)
+	log.Error(http.ListenAndServe(addr, handler))
 }
 
 // listenAndServeTLS serves a tls webserver
 func listenAndServeTLS(ctx context.Context, cancel func(), addr string, tls *TLSConfig, handler http.Handler) {
 	defer cancel()
-	log.Infof("https server listening on: localhost%s\n", addr)
-	log.Print(http.ListenAndServeTLS(addr, tls.CertFile, tls.KeyFile, handler))
+	addrStr := getAddrString(addr)
+	log.Infof("https server listening on: http://%s\n", addrStr)
+	log.Error(http.ListenAndServeTLS(addr, tls.CertFile, tls.KeyFile, handler))
 }
 
 func testTarget(url string) error {
 	_, err := http.Get(url)
 	return err
+}
+
+func getAddrString(addr string) string {
+	if strings.HasPrefix(addr, ":") {
+		addr = fmt.Sprintf("0.0.0.0%s", addr)
+	}
+	return addr
 }

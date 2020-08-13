@@ -17,6 +17,8 @@ const (
 	StateCached State = "cached"
 	// StateNoCache represents a cache entry that does not need to be cached
 	StateNoCache State = "no cache"
+	// StateInvalid represents an invalid state
+	StateInvalid State = ""
 )
 
 // Entry represents a backend entry
@@ -28,6 +30,9 @@ type Entry struct {
 	// Created is the timestamp for when the entry was created
 	Created JSONTime `json:"created"`
 	// Status  represents the entry status
-	Status State `json:"Status"`
-	m      *sync.Mutex
+	Status State `json:"status"`
+	// CachedFile represents the file location of the cached request body
+	CachedFile string `json:"cached_file"`
+	m          *sync.Mutex
+	resp       *response
 }
