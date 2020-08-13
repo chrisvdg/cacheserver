@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -116,6 +117,7 @@ func (b *backend) proxy(id string, res http.ResponseWriter, req *http.Request) e
 	case StateInProgress:
 		b.entryInProgress(id, res)
 	case StateCached:
+		b.entryCached(id, res)
 	case StateNoCache:
 		return ErrNoCache
 	default:
@@ -171,14 +173,31 @@ func (b *backend) entryInProgress(id string, res http.ResponseWriter) error {
 	}
 	res.WriteHeader(e.resp.responseCode)
 
-	// TODO: Copy body
+	reader := e.resp.getReader()
+	defer reader.Close()
+	_, err := io.Copy(res, reader)
+	if err != nil {
+		return errors.Wrap(err, "failed to get reader from buffer")
+	}
 
 	return nil
 }
 
+// entryCached writes the contents of the cached file to the response writer
 func (b *backend) entryCached(id string, res http.ResponseWriter) error {
-	// Get reader from cached file and write to response writer body
-
+	e, ok := b.data[id]
+	if !ok {
+		return ErrEntryNotFound
+	}
+	cacheFile, err := os.Open(e.CachedFile)
+	if err != nil {
+		return errors.Wrap(err, "failed to open cached file")
+	}
+	defer cacheFile.Close()
+	_, err = io.Copy(res, cacheFile)
+	if err != nil {
+		return errors.Wrap(err, "failed to read from cache file")
+	}
 	return nil
 }
 
