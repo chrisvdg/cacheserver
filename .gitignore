@@ -7,6 +7,10 @@
 cacheserver
 main
 
+# config and data files
+config.data
+cachebackend
+
 # Test binary, built with `go test -c`
 *.test
 
