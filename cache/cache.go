@@ -14,8 +14,8 @@ var (
 // New returns a new Cache instance
 // backendFilePath represents the file on the filesystem where the metadata is stored
 // minSize represents the minimum size of the body to be cached (0 caches everything)
-func New(backendFilePath string, proxyURL string, minSize int) (*Cache, error) {
-	b, err := newBackend(backendFilePath, proxyURL)
+func New(backendFilePath, cacheDir, proxyURL string, minSize int) (*Cache, error) {
+	b, err := newBackend(backendFilePath, cacheDir, proxyURL)
 	if err != nil {
 		return nil, err
 	}

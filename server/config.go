@@ -8,6 +8,7 @@ type Config struct {
 	TLS           *TLSConfig
 	Verbose       bool
 	BackendFile   string
+	CacheDir      string
 	ProxyTarget   string
 }
 

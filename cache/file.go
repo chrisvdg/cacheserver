@@ -8,6 +8,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+const filePerm os.FileMode = 0666
+
 // save writes the current file backend data to the backend file
 func (b *backend) save() error {
 	data, err := json.Marshal(b.data)

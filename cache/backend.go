@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -12,22 +13,22 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 )
-
-const filePerm os.FileMode = 0666
 
 var (
 	// ErrEntryNotFound represents an error where a cache entry was not found
 	ErrEntryNotFound = errors.New("cache entry not found")
 )
 
-func newBackend(filePath string, proxyURL string) (*backend, error) {
+func newBackend(filePath, cacheDir, proxyURL string) (*backend, error) {
 	if filePath == "" {
 		return nil, errors.New("backend file path is empty")
 	}
 	return &backend{
 		targetBaseURL: proxyURL,
 		filePath:      filePath,
+		cacheDir:      cacheDir,
 		data:          make(map[string]*Entry, 0),
 		http:          &http.Client{},
 	}, nil
@@ -36,6 +37,7 @@ func newBackend(filePath string, proxyURL string) (*backend, error) {
 type backend struct {
 	targetBaseURL string
 	filePath      string
+	cacheDir      string
 	data          map[string]*Entry
 	m             *sync.Mutex
 	http          *http.Client
@@ -65,9 +67,8 @@ func (b *backend) addEntry(path string, params url.Values) (string, error) {
 	}
 	id := b.generateID()
 	b.data[id] = &e
-	err := b.save()
 
-	return id, err
+	return id, b.save()
 }
 
 // generateID generates a unique cache entry ID
@@ -92,6 +93,30 @@ func (b *backend) setEntryState(id string, state State) error {
 	e.m.Lock()
 	defer e.m.Unlock()
 	e.Status = state
+	b.m.Lock()
+	defer b.m.Unlock()
+
+	err := b.save()
+	if err != nil {
+		return errors.Wrap(err, "failed to save cache entry state")
+	}
+
+	return nil
+}
+
+func (b *backend) setEntryCacheFile(id, file string) error {
+	e, ok := b.data[id]
+	if !ok {
+		return ErrEntryNotFound
+	}
+	e.m.Lock()
+
+	e.m.Unlock()
+	err := b.save()
+	if err != nil {
+		return errors.Wrap(err, "failed to save setting cache file name")
+	}
+
 	return nil
 }
 
@@ -102,6 +127,7 @@ func (b *backend) getEntryState(id string) (State, error) {
 	}
 	e.m.Lock()
 	defer e.m.Unlock()
+
 	return e.Status, nil
 }
 
@@ -138,7 +164,6 @@ func (b *backend) entryInit(id string, res http.ResponseWriter, req *http.Reques
 		e.m.Unlock()
 		return errors.Wrap(err, "failed to get target proxy URL")
 	}
-	defer req.Body.Close()
 	targetReq, err := http.NewRequest("GET", tURL, req.Body)
 	targetReq.URL.RawQuery = req.URL.RawQuery
 	for name, values := range req.Header {
@@ -156,8 +181,32 @@ func (b *backend) entryInit(id string, res http.ResponseWriter, req *http.Reques
 	if err != nil {
 		return errors.Wrap(err, "failed to create cached response")
 	}
+	cacheFile := b.generateCacheFileName(id)
+	err = b.setEntryCacheFile(id, cacheFile)
+	if err != nil {
+		return nil
+	}
+
+	go b.startCaching(id, e, targetResp.Body)
 
 	return b.entryInProgress(id, res)
+}
+
+func (b *backend) generateCacheFileName(id string) string {
+	filename := fmt.Sprintf("%s_%s.blob", id, generateID(10))
+	return path.Join(b.cacheDir, filename)
+}
+
+func (b *backend) startCaching(entryID string, e *Entry, body io.ReadCloser) {
+	b.setEntryState(entryID, StateInProgress)
+	err := e.resp.cacheBody(body, e.CachedFile)
+	if err != nil {
+		log.Errorf(err.Error())
+		b.setEntryState(entryID, StateInit)
+		return
+	}
+
+	b.setEntryState(entryID, StateCached)
 }
 
 func (b *backend) entryInProgress(id string, res http.ResponseWriter) error {
@@ -173,9 +222,7 @@ func (b *backend) entryInProgress(id string, res http.ResponseWriter) error {
 	}
 	res.WriteHeader(e.resp.responseCode)
 
-	reader := e.resp.getReader()
-	defer reader.Close()
-	_, err := io.Copy(res, reader)
+	_, err := io.Copy(res, e.resp.getReader())
 	if err != nil {
 		return errors.Wrap(err, "failed to get reader from buffer")
 	}
@@ -198,6 +245,7 @@ func (b *backend) entryCached(id string, res http.ResponseWriter) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to read from cache file")
 	}
+
 	return nil
 }
 
@@ -207,6 +255,7 @@ func (b *backend) getProxyURL(reqPath string) (string, error) {
 		return "", errors.Wrap(err, "Failed to fetch path from request")
 	}
 	u.Path = path.Join(u.Path, reqPath)
+
 	return u.String(), nil
 }
 
@@ -220,6 +269,7 @@ func (t JSONTime) MarshalJSON() ([]byte, error) {
 	if unix < 0 {
 		unix = 0
 	}
+
 	return []byte(strconv.FormatInt(unix, 10)), nil
 }
 
@@ -231,6 +281,7 @@ func (t *JSONTime) UnmarshalJSON(s []byte) (err error) {
 		return err
 	}
 	*(*time.Time)(t) = time.Unix(q, 0)
+
 	return nil
 }
 
