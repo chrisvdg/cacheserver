@@ -11,10 +11,11 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func newHandlers(target string) *handlers {
+func newHandlers(target string, cache *cache.Cache) *handlers {
 	return &handlers{
 		proxyBaseURL: target,
 		http:         &http.Client{},
+		backend:      cache,
 	}
 }
 

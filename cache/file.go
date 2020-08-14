@@ -9,6 +9,7 @@ import (
 )
 
 const filePerm os.FileMode = 0666
+const dirPerm os.FileMode = 0700
 
 // save writes the current file backend data to the backend file
 func (b *backend) save() error {

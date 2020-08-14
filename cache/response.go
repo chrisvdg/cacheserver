@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -16,11 +17,16 @@ var (
 )
 
 func newResponse(headers http.Header, body io.ReadCloser, responseCode int) (*response, error) {
-	rBody := &responseBody{}
+	rBody := &responseBody{
+		body:           []byte{},
+		writeLock:      &sync.Mutex{},
+		writeCompleted: false,
+	}
 	return &response{
 		headers:      headers,
 		responseCode: responseCode,
 		body:         rBody,
+		readLock:     &sync.Mutex{},
 	}, nil
 }
 
@@ -31,8 +37,9 @@ type response struct {
 	responseCode int
 }
 
-func (r *response) cacheBody(body io.ReadCloser, cacheFile string) error {
+func (r *response) cacheBody(body io.ReadCloser, cacheFile string, readWg *sync.WaitGroup) error {
 	written, err := io.Copy(r.body, body)
+	body.Close()
 	r.body.MarkWriteCompleted(written, err)
 	if err != nil {
 		return errors.Wrap(err, "failed to copy proxy body to cache")
@@ -42,6 +49,9 @@ func (r *response) cacheBody(body io.ReadCloser, cacheFile string) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to write cache to file")
 	}
+
+	readWg.Wait()
+	r.body = nil
 
 	return nil
 }
@@ -77,8 +87,8 @@ func (rb *responseBody) MarkWriteCompleted(written int64, err error) {
 	rb.writeLock.Unlock()
 }
 
-func (rb *responseBody) GetReader() responseBodyReader {
-	return responseBodyReader{
+func (rb *responseBody) GetReader() *responseBodyReader {
+	return &responseBodyReader{
 		rb: rb,
 		i:  0,
 	}
@@ -90,8 +100,8 @@ type responseBodyReader struct {
 }
 
 // Read implements io.Read
-// When nothing to read it will wait for 1 millisecond
-func (r responseBodyReader) Read(b []byte) (int, error) {
+// When nothing to read it will wait for 100 milliseconds
+func (r *responseBodyReader) Read(b []byte) (int, error) {
 	if r.rb.readErr != nil {
 		err := errors.Wrap(ErrReadFailed, r.rb.readErr.Error())
 		return 0, err
@@ -99,13 +109,13 @@ func (r responseBodyReader) Read(b []byte) (int, error) {
 
 	if r.i >= int64(len(r.rb.body)) {
 		if r.rb.writeCompleted {
+			log.Debug("cache fully read read")
 			return 0, io.EOF
 		}
-		time.Sleep(1 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		return 0, nil
 	}
 	n := copy(b, r.rb.body[r.i:])
-
 	r.i += int64(n)
 
 	return n, nil

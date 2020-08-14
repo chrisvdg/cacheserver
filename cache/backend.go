@@ -25,12 +25,20 @@ func newBackend(filePath, cacheDir, proxyURL string) (*backend, error) {
 	if filePath == "" {
 		return nil, errors.New("backend file path is empty")
 	}
+	if cacheDir == "" {
+		return nil, errors.New("cache dir not provided")
+	}
+	if _, err := os.Stat(cacheDir); os.IsNotExist(err) {
+		os.Mkdir(cacheDir, dirPerm)
+	}
+
 	return &backend{
 		targetBaseURL: proxyURL,
 		filePath:      filePath,
 		cacheDir:      cacheDir,
 		data:          make(map[string]*Entry, 0),
 		http:          &http.Client{},
+		m:             &sync.Mutex{},
 	}, nil
 }
 
@@ -59,14 +67,16 @@ func (b *backend) addEntry(path string, params url.Values) (string, error) {
 	b.m.Lock()
 	defer b.m.Unlock()
 
-	e := Entry{
+	e := &Entry{
 		Path:    path,
 		Params:  params,
 		Created: JSONTime(time.Now()),
 		Status:  StateInit,
+		m:       &sync.Mutex{},
+		readWg:  &sync.WaitGroup{},
 	}
 	id := b.generateID()
-	b.data[id] = &e
+	b.data[id] = e
 
 	return id, b.save()
 }
@@ -110,7 +120,7 @@ func (b *backend) setEntryCacheFile(id, file string) error {
 		return ErrEntryNotFound
 	}
 	e.m.Lock()
-
+	e.CachedFile = file
 	e.m.Unlock()
 	err := b.save()
 	if err != nil {
@@ -199,7 +209,8 @@ func (b *backend) generateCacheFileName(id string) string {
 
 func (b *backend) startCaching(entryID string, e *Entry, body io.ReadCloser) {
 	b.setEntryState(entryID, StateInProgress)
-	err := e.resp.cacheBody(body, e.CachedFile)
+	err := e.resp.cacheBody(body, e.CachedFile, e.readWg)
+	log.Debugf("%s downloaded", entryID)
 	if err != nil {
 		log.Errorf(err.Error())
 		b.setEntryState(entryID, StateInit)
@@ -207,6 +218,8 @@ func (b *backend) startCaching(entryID string, e *Entry, body io.ReadCloser) {
 	}
 
 	b.setEntryState(entryID, StateCached)
+
+	log.Debug(e.Status)
 }
 
 func (b *backend) entryInProgress(id string, res http.ResponseWriter) error {
@@ -222,10 +235,12 @@ func (b *backend) entryInProgress(id string, res http.ResponseWriter) error {
 	}
 	res.WriteHeader(e.resp.responseCode)
 
+	e.readWg.Add(1)
 	_, err := io.Copy(res, e.resp.getReader())
 	if err != nil {
 		return errors.Wrap(err, "failed to get reader from buffer")
 	}
+	e.readWg.Done()
 
 	return nil
 }

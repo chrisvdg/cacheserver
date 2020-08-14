@@ -42,7 +42,7 @@ type Server struct {
 // ListenAndServe listens for new requests and serves them
 func (s *Server) ListenAndServe() {
 	r := mux.NewRouter()
-	h := newHandlers(s.c.ProxyTarget)
+	h := newHandlers(s.c.ProxyTarget, s.cache)
 
 	r.PathPrefix("/").HandlerFunc(h.CacheHandler).Methods("GET")
 	r.PathPrefix("/").HandlerFunc(h.ProxyHandler)

@@ -35,4 +35,5 @@ type Entry struct {
 	CachedFile string `json:"cached_file"`
 	m          *sync.Mutex
 	resp       *response
+	readWg     *sync.WaitGroup
 }
