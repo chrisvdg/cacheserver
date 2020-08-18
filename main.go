@@ -13,7 +13,7 @@ func main() {
 	tlsCert := pflag.StringP("tlscert", "c", "", "TLS certificate file path")
 	tlsOnly := pflag.BoolP("tlsonly", "s", false, "Only serve TLS")
 	target := pflag.StringP("proxytarget", "p", "", "Target server to proxy")
-	backendFile := pflag.StringP("backendfile", "f", "./config.data", "backend metadata file")
+	backendFile := pflag.StringP("backendfile", "f", "./cachebackend.data", "backend metadata file")
 	cacheDir := pflag.StringP("cachedir", "d", "./cachebackend", "directory where cached downloads will be stored")
 	verbose := pflag.BoolP("verbose", "v", false, "Verbose output")
 	pflag.Parse()

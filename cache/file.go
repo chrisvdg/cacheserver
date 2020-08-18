@@ -13,7 +13,7 @@ const dirPerm os.FileMode = 0700
 
 // save writes the current file backend data to the backend file
 func (b *backend) save() error {
-	data, err := json.Marshal(b.data)
+	data, err := json.MarshalIndent(b.data, "", "\t")
 	if err != nil {
 		return errors.Wrap(err, "failed to marshal backend data to json")
 	}
