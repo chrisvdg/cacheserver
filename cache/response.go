@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -109,7 +108,6 @@ func (r *responseBodyReader) Read(b []byte) (int, error) {
 
 	if r.i >= int64(len(r.rb.body)) {
 		if r.rb.writeCompleted {
-			log.Debug("cache fully read read")
 			return 0, io.EOF
 		}
 		time.Sleep(100 * time.Millisecond)

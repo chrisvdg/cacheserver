@@ -26,7 +26,7 @@ type handlers struct {
 }
 
 func (h *handlers) CacheHandler(res http.ResponseWriter, req *http.Request) {
-	log.Errorf("Cache Handler")
+	log.Debug("Cache Handler")
 	h.cache(res, req)
 }
 

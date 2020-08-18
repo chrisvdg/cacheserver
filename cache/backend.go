@@ -149,18 +149,20 @@ func (b *backend) proxy(id string, res http.ResponseWriter, req *http.Request) e
 
 	switch state {
 	case StateInit:
-		b.entryInit(id, res, req)
+		log.Debugf("Init entry %s", id)
+		return b.entryInit(id, res, req)
 	case StateInProgress:
-		b.entryInProgress(id, res)
+		log.Debugf("In progress entry %s", id)
+		return b.entryInProgress(id, res)
 	case StateCached:
-		b.entryCached(id, res)
+		log.Debugf("Cached entry %s", id)
+		return b.entryCached(id, res)
 	case StateNoCache:
+		log.Debugf("No cache entry %s", id)
 		return ErrNoCache
 	default:
 		return errors.Errorf("State %s not supported", state)
 	}
-
-	return nil
 }
 
 func (b *backend) entryInit(id string, res http.ResponseWriter, req *http.Request) error {
@@ -169,9 +171,17 @@ func (b *backend) entryInit(id string, res http.ResponseWriter, req *http.Reques
 		return ErrEntryNotFound
 	}
 	e.m.Lock()
+	defer e.m.Unlock()
+
+	if e.Status == StateInProgress {
+		log.Debugf("entry %s seem to already be in progress", id)
+		return b.entryInProgress(id, res)
+	} else if e.Status != StateInit {
+		return errors.Errorf("Entry in unexpected state: %s, expected init", e.Status)
+	}
+
 	tURL, err := b.getProxyURL(e.Path)
 	if err != nil {
-		e.m.Unlock()
 		return errors.Wrap(err, "failed to get target proxy URL")
 	}
 	targetReq, err := http.NewRequest("GET", tURL, req.Body)
@@ -183,11 +193,10 @@ func (b *backend) entryInit(id string, res http.ResponseWriter, req *http.Reques
 	}
 	targetResp, err := b.http.Do(targetReq)
 	if err != nil {
-		e.m.Unlock()
 		return errors.Wrap(err, "target request failed")
 	}
+	log.Debugf("%v", targetResp.Header)
 	e.resp, err = newResponse(targetResp.Header, targetResp.Body, targetResp.StatusCode)
-	e.m.Unlock()
 	if err != nil {
 		return errors.Wrap(err, "failed to create cached response")
 	}
@@ -196,7 +205,7 @@ func (b *backend) entryInit(id string, res http.ResponseWriter, req *http.Reques
 	if err != nil {
 		return nil
 	}
-
+	e.Status = StateInProgress
 	go b.startCaching(id, e, targetResp.Body)
 
 	return b.entryInProgress(id, res)
@@ -208,7 +217,6 @@ func (b *backend) generateCacheFileName(id string) string {
 }
 
 func (b *backend) startCaching(entryID string, e *Entry, body io.ReadCloser) {
-	b.setEntryState(entryID, StateInProgress)
 	err := e.resp.cacheBody(body, e.CachedFile, e.readWg)
 	log.Debugf("%s downloaded", entryID)
 	if err != nil {
