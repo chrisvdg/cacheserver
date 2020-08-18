@@ -103,9 +103,9 @@ func (b *backend) setEntryState(id string, state State) error {
 	e.m.Lock()
 	defer e.m.Unlock()
 	e.Status = state
+
 	b.m.Lock()
 	defer b.m.Unlock()
-
 	err := b.save()
 	if err != nil {
 		return errors.Wrap(err, "failed to save cache entry state")
@@ -119,9 +119,7 @@ func (b *backend) setEntryCacheFile(id, file string) error {
 	if !ok {
 		return ErrEntryNotFound
 	}
-	e.m.Lock()
 	e.CachedFile = file
-	e.m.Unlock()
 	err := b.save()
 	if err != nil {
 		return errors.Wrap(err, "failed to save setting cache file name")
@@ -171,17 +169,19 @@ func (b *backend) entryInit(id string, res http.ResponseWriter, req *http.Reques
 		return ErrEntryNotFound
 	}
 	e.m.Lock()
-	defer e.m.Unlock()
 
 	if e.Status == StateInProgress {
 		log.Debugf("entry %s seem to already be in progress", id)
+		e.m.Unlock()
 		return b.entryInProgress(id, res)
 	} else if e.Status != StateInit {
+		e.m.Unlock()
 		return errors.Errorf("Entry in unexpected state: %s, expected init", e.Status)
 	}
 
 	tURL, err := b.getProxyURL(e.Path)
 	if err != nil {
+		e.m.Unlock()
 		return errors.Wrap(err, "failed to get target proxy URL")
 	}
 	targetReq, err := http.NewRequest("GET", tURL, req.Body)
@@ -193,20 +193,25 @@ func (b *backend) entryInit(id string, res http.ResponseWriter, req *http.Reques
 	}
 	targetResp, err := b.http.Do(targetReq)
 	if err != nil {
+		e.m.Unlock()
 		return errors.Wrap(err, "target request failed")
 	}
-	log.Debugf("%v", targetResp.Header)
 	e.resp, err = newResponse(targetResp.Header, targetResp.Body, targetResp.StatusCode)
 	if err != nil {
+		e.m.Unlock()
 		return errors.Wrap(err, "failed to create cached response")
 	}
 	cacheFile := b.generateCacheFileName(id)
 	err = b.setEntryCacheFile(id, cacheFile)
 	if err != nil {
-		return nil
+		e.m.Unlock()
+		return err
 	}
 	e.Status = StateInProgress
 	go b.startCaching(id, e, targetResp.Body)
+
+	log.Debugf("Entry %s is initialized", id)
+	e.m.Unlock()
 
 	return b.entryInProgress(id, res)
 }
@@ -226,8 +231,6 @@ func (b *backend) startCaching(entryID string, e *Entry, body io.ReadCloser) {
 	}
 
 	b.setEntryState(entryID, StateCached)
-
-	log.Debug(e.Status)
 }
 
 func (b *backend) entryInProgress(id string, res http.ResponseWriter) error {

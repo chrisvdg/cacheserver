@@ -86,7 +86,6 @@ func (h *handlers) proxy(res http.ResponseWriter, req *http.Request) {
 }
 
 func (h *handlers) cache(res http.ResponseWriter, req *http.Request) {
-	log.Debug(req.URL.Path)
 	err := h.backend.CopyFromCache(res, req)
 	if err == cache.ErrNoCache {
 		h.proxy(res, req)

@@ -50,6 +50,7 @@ func (r *response) cacheBody(body io.ReadCloser, cacheFile string, readWg *sync.
 	}
 
 	readWg.Wait()
+	r.body.body = nil
 	r.body = nil
 
 	return nil
