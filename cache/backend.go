@@ -106,8 +106,13 @@ func (b *backend) setEntryState(id string, state State) error {
 	}
 	e.m.Lock()
 	defer e.m.Unlock()
-	e.Status = state
+	return b.setEntryStateNoEntryLock(e, state)
+}
 
+// setEntryStateNoEntryLock sets the state on provided entry without Entry lock.
+// Make sure the entry is locked before calling this function and released after.
+func (b *backend) setEntryStateNoEntryLock(e *Entry, state State) error {
+	e.Status = state
 	b.m.Lock()
 	defer b.m.Unlock()
 	err := b.save()
@@ -211,7 +216,13 @@ func (b *backend) entryInit(id string, res http.ResponseWriter, req *http.Reques
 		e.m.Unlock()
 		return err
 	}
-	e.Status = StateInProgress
+
+	err = b.setEntryStateNoEntryLock(e, StateInProgress)
+	if err != nil {
+		e.m.Unlock()
+		return err
+	}
+
 	go b.startCaching(id, e, targetResp.Body)
 
 	log.Debugf("Entry %s is initialized", id)
