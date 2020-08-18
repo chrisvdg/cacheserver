@@ -23,13 +23,17 @@ var (
 
 func newBackend(filePath, cacheDir, proxyURL string) (*backend, error) {
 	if filePath == "" {
-		return nil, errors.New("backend file path is empty")
+		return nil, errors.New("backend file path is not provided")
 	}
 	if cacheDir == "" {
 		return nil, errors.New("cache dir not provided")
 	}
 	if _, err := os.Stat(cacheDir); os.IsNotExist(err) {
+		log.Debugf("Creating cache dir %s", cacheDir)
 		os.Mkdir(cacheDir, dirPerm)
+	} else {
+		log.Debugf("Deleting contents of cache dir %s", cacheDir)
+		removeDirContent(cacheDir)
 	}
 
 	return &backend{
