@@ -17,7 +17,7 @@ func main() {
 	target := pflag.StringP("proxytarget", "p", "", "Target server to proxy")
 	backendFile := pflag.StringP("backendfile", "f", "./cachebackend.data", "backend metadata file")
 	cacheDir := pflag.StringP("cachedir", "d", "./cachebackend", "directory where cached downloads will be stored")
-	cacheExpiration := pflag.StringP("cacheexpiration", "e", "1d", "amount of time a cache entry is valid. eg: -e 1d2m (1 day and 2 minutes). Or provide 0 to disable")
+	cacheExpiration := pflag.StringP("cacheexpiration", "e", "24h", "amount of time a cache entry is valid. eg: -e 1h2m (1 hour and 2 minutes). Or provide 0 to disable")
 	cacheCleanInterval := pflag.StringP("chachecleanint", "i", "12h", "amount of time where in between the cache will be cleaned up.  eg: -e 4h (4 hours). Or provide 0 to disable")
 	verbose := pflag.BoolP("verbose", "v", false, "Verbose output")
 	pflag.Parse()
