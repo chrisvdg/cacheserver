@@ -8,7 +8,6 @@ import (
 	"os"
 	"path"
 	"reflect"
-	"strconv"
 	"sync"
 	"time"
 
@@ -36,26 +35,35 @@ func newBackend(filePath, cacheDir, proxyURL string) (*backend, error) {
 		removeDirContent(cacheDir)
 	}
 
-	return &backend{
-		targetBaseURL: proxyURL,
-		filePath:      filePath,
-		cacheDir:      cacheDir,
-		data:          make(map[string]*Entry, 0),
-		http:          &http.Client{},
-		m:             &sync.Mutex{},
-	}, nil
+	b := &backend{
+		targetBaseURL:   proxyURL,
+		filePath:        filePath,
+		cacheDir:        cacheDir,
+		data:            make(map[string]*Entry, 0),
+		http:            &http.Client{},
+		m:               &sync.Mutex{},
+		cleanupInterval: 5 * time.Minute,
+		cacheExpiration: 10 * time.Minute,
+	}
+
+	// start cleanup go routine
+	go b.cleanup(nil)
+
+	return b, nil
 }
 
 type backend struct {
-	targetBaseURL string
-	filePath      string
-	cacheDir      string
-	data          map[string]*Entry
-	m             *sync.Mutex
-	http          *http.Client
+	targetBaseURL   string
+	filePath        string
+	cacheDir        string
+	data            map[string]*Entry
+	m               *sync.Mutex
+	http            *http.Client
+	cleanupInterval time.Duration
+	cacheExpiration time.Duration
 }
 
-func (b *backend) findEntry(req *http.Request) (string, error) {
+func (b *backend) findEntryByRequest(req *http.Request) (string, error) {
 	for entryID, e := range b.data {
 		if e.Path == req.URL.Path {
 			if reflect.DeepEqual(e.Params, req.URL.Query()) {
@@ -128,10 +136,12 @@ func (b *backend) setEntryCacheFile(id, file string) error {
 	if !ok {
 		return ErrEntryNotFound
 	}
+	e.m.Lock()
 	e.CachedFile = file
+	e.m.Unlock()
 	err := b.save()
 	if err != nil {
-		return errors.Wrap(err, "failed to save setting cache file name")
+		return errors.Wrap(err, "failed to save new cache file name")
 	}
 
 	return nil
@@ -298,45 +308,4 @@ func (b *backend) getProxyURL(reqPath string) (string, error) {
 	u.Path = path.Join(u.Path, reqPath)
 
 	return u.String(), nil
-}
-
-// JSONTime is a time.Time wrapper that JSON (un)marshals into a unix timestamp
-type JSONTime time.Time
-
-// MarshalJSON is used to convert the timestamp to JSON
-func (t JSONTime) MarshalJSON() ([]byte, error) {
-	unix := time.Time(t).Unix()
-	// Negative time stamps make no sense for our use cases
-	if unix < 0 {
-		unix = 0
-	}
-
-	return []byte(strconv.FormatInt(unix, 10)), nil
-}
-
-// UnmarshalJSON is used to convert the timestamp from JSON
-func (t *JSONTime) UnmarshalJSON(s []byte) (err error) {
-	r := string(s)
-	q, err := strconv.ParseInt(r, 10, 64)
-	if err != nil {
-		return err
-	}
-	*(*time.Time)(t) = time.Unix(q, 0)
-
-	return nil
-}
-
-// Unix returns the unix time stamp of the underlaying time object
-func (t JSONTime) Unix() int64 {
-	return time.Time(t).Unix()
-}
-
-// Time returns the JSON time as a time.Time instance
-func (t JSONTime) Time() time.Time {
-	return time.Time(t)
-}
-
-// String returns time as a formatted string
-func (t JSONTime) String() string {
-	return t.Time().String()
 }

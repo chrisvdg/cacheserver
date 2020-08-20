@@ -38,7 +38,7 @@ type Cache struct {
 
 // CopyFromCache returns reader where the cached (or proxied) body is written to
 func (c *Cache) CopyFromCache(res http.ResponseWriter, req *http.Request) error {
-	e, err := c.b.findEntry(req)
+	e, err := c.b.findEntryByRequest(req)
 	if err != nil && err != ErrEntryNotFound {
 		return errors.Wrap(err, "failed to search entry")
 	}
