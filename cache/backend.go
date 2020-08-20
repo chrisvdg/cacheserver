@@ -131,14 +131,18 @@ func (b *backend) setEntryStateNoEntryLock(e *Entry, state State) error {
 	return nil
 }
 
-func (b *backend) setEntryCacheFile(id, file string) error {
+func (b *backend) setEntryCacheFile(id, file string, lock bool) error {
 	e, ok := b.data[id]
 	if !ok {
 		return ErrEntryNotFound
 	}
-	e.m.Lock()
+	if lock {
+		e.m.Lock()
+	}
 	e.CachedFile = file
-	e.m.Unlock()
+	if lock {
+		e.m.Unlock()
+	}
 	err := b.save()
 	if err != nil {
 		return errors.Wrap(err, "failed to save new cache file name")
@@ -221,7 +225,7 @@ func (b *backend) entryInit(id string, res http.ResponseWriter, req *http.Reques
 		return errors.Wrap(err, "failed to create cached response")
 	}
 	cacheFile := b.generateCacheFileName(id)
-	err = b.setEntryCacheFile(id, cacheFile)
+	err = b.setEntryCacheFile(id, cacheFile, false)
 	if err != nil {
 		e.m.Unlock()
 		return err

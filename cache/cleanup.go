@@ -37,7 +37,7 @@ func (b *backend) markExpired() {
 					log.Error(err)
 					continue
 				}
-				err = b.setEntryCacheFile(eID, "")
+				err = b.setEntryCacheFile(eID, "", true)
 				if err != nil {
 					log.Error(err)
 					continue
@@ -57,7 +57,7 @@ func (b *backend) cleanCacheDir() {
 			filesInUse = append(filesInUse, e.CachedFile)
 		} else {
 			if e.CachedFile != "" {
-				err := b.setEntryCacheFile(eID, "")
+				err := b.setEntryCacheFile(eID, "", true)
 				if err != nil {
 					log.Error(err)
 					continue
