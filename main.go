@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"github.com/chrisvdg/cacheserver/server"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
@@ -15,6 +17,8 @@ func main() {
 	target := pflag.StringP("proxytarget", "p", "", "Target server to proxy")
 	backendFile := pflag.StringP("backendfile", "f", "./cachebackend.data", "backend metadata file")
 	cacheDir := pflag.StringP("cachedir", "d", "./cachebackend", "directory where cached downloads will be stored")
+	cacheExpiration := pflag.StringP("cacheexpiration", "e", "1d", "amount of time a cache entry is valid. eg: -e 1d2m (1 day and 2 minutes). Or provide 0 to disable")
+	cacheCleanInterval := pflag.StringP("chachecleanint", "i", "12h", "amount of time where in between the cache will be cleaned up.  eg: -e 4h (4 hours). Or provide 0 to disable")
 	verbose := pflag.BoolP("verbose", "v", false, "Verbose output")
 	pflag.Parse()
 
@@ -28,6 +32,15 @@ func main() {
 		TimestampFormat: "15:04:05 02/01/2006",
 	})
 
+	cacheExp, err := time.ParseDuration(*cacheExpiration)
+	if err != nil {
+		log.Fatalf("Failed to parse cache expiration: %s", err)
+	}
+	cacheInt, err := time.ParseDuration(*cacheCleanInterval)
+	if err != nil {
+		log.Fatalf("Failed to parse cache cleaning interval: %s", err)
+	}
+
 	c := &server.Config{
 		ListenAddr:    *listAddr,
 		TLSListenAddr: *tlsListAddr,
@@ -36,10 +49,12 @@ func main() {
 			KeyFile:  *tlsKey,
 			CertFile: *tlsCert,
 		},
-		ProxyTarget: *target,
-		BackendFile: *backendFile,
-		CacheDir:    *cacheDir,
-		Verbose:     *verbose,
+		ProxyTarget:          *target,
+		BackendFile:          *backendFile,
+		CacheDir:             *cacheDir,
+		Verbose:              *verbose,
+		CacheExpiration:      cacheExp,
+		CacheCleanupInterval: cacheInt,
 	}
 
 	s, err := server.New(c)

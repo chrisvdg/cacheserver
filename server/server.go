@@ -22,7 +22,7 @@ func New(c *Config) (*Server, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to connect to proxy target")
 	}
-	cache, err := cache.New(c.BackendFile, c.CacheDir, c.ProxyTarget, 0)
+	cache, err := cache.New(c.BackendFile, c.CacheDir, c.ProxyTarget, 0, c.CacheExpiration, c.CacheCleanupInterval)
 	if err != nil {
 		return nil, err
 	}

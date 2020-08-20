@@ -20,7 +20,7 @@ var (
 	ErrEntryNotFound = errors.New("cache entry not found")
 )
 
-func newBackend(filePath, cacheDir, proxyURL string) (*backend, error) {
+func newBackend(filePath, cacheDir, proxyURL string, cacheExp, cleanInterval time.Duration) (*backend, error) {
 	if filePath == "" {
 		return nil, errors.New("backend file path is not provided")
 	}
@@ -42,8 +42,8 @@ func newBackend(filePath, cacheDir, proxyURL string) (*backend, error) {
 		data:            make(map[string]*Entry, 0),
 		http:            &http.Client{},
 		m:               &sync.Mutex{},
-		cleanupInterval: 5 * time.Minute,
-		cacheExpiration: 10 * time.Minute,
+		cacheExpiration: cacheExp,
+		cleanupInterval: cleanInterval,
 	}
 
 	// start cleanup go routine
@@ -80,12 +80,11 @@ func (b *backend) addEntry(path string, params url.Values) (string, error) {
 	defer b.m.Unlock()
 
 	e := &Entry{
-		Path:    path,
-		Params:  params,
-		Created: JSONTime(time.Now()),
-		Status:  StateInit,
-		m:       &sync.Mutex{},
-		readWg:  &sync.WaitGroup{},
+		Path:   path,
+		Params: params,
+		Status: StateInit,
+		m:      &sync.Mutex{},
+		readWg: &sync.WaitGroup{},
 	}
 	id := b.generateID()
 	b.data[id] = e
@@ -107,23 +106,21 @@ func (b *backend) generateID() string {
 	}
 }
 
-func (b *backend) setEntryState(id string, state State) error {
+func (b *backend) setEntryState(id string, state State, lock bool) error {
 	e, ok := b.data[id]
 	if !ok {
 		return ErrEntryNotFound
 	}
-	e.m.Lock()
-	defer e.m.Unlock()
-	return b.setEntryStateNoEntryLock(e, state)
-}
-
-// setEntryStateNoEntryLock sets the state on provided entry without Entry lock.
-// Make sure the entry is locked before calling this function and released after.
-func (b *backend) setEntryStateNoEntryLock(e *Entry, state State) error {
+	if lock {
+		e.m.Lock()
+	}
 	e.Status = state
+	if lock {
+		e.m.Unlock()
+	}
 	b.m.Lock()
-	defer b.m.Unlock()
 	err := b.save()
+	b.m.Unlock()
 	if err != nil {
 		return errors.Wrap(err, "failed to save cache entry state")
 	}
@@ -177,7 +174,7 @@ func (b *backend) proxy(id string, res http.ResponseWriter, req *http.Request) e
 		return b.entryInProgress(id, res)
 	case StateCached:
 		log.Debugf("Cached entry %s", id)
-		return b.entryCached(id, res)
+		return b.entryCached(id, res, req)
 	case StateNoCache:
 		log.Debugf("No cache entry %s", id)
 		return ErrNoCache
@@ -230,8 +227,8 @@ func (b *backend) entryInit(id string, res http.ResponseWriter, req *http.Reques
 		e.m.Unlock()
 		return err
 	}
-
-	err = b.setEntryStateNoEntryLock(e, StateInProgress)
+	e.InitTime = JSONTime(time.Now())
+	err = b.setEntryState(id, StateInProgress, false)
 	if err != nil {
 		e.m.Unlock()
 		return err
@@ -252,14 +249,14 @@ func (b *backend) generateCacheFileName(id string) string {
 
 func (b *backend) startCaching(entryID string, e *Entry, body io.ReadCloser) {
 	err := e.resp.cacheBody(body, e.CachedFile, e.readWg)
-	log.Debugf("%s downloaded", entryID)
+	log.Debugf("Entry %s downloaded", entryID)
 	if err != nil {
 		log.Errorf(err.Error())
-		b.setEntryState(entryID, StateInit)
+		b.setEntryState(entryID, StateInit, true)
 		return
 	}
 
-	b.setEntryState(entryID, StateCached)
+	b.setEntryState(entryID, StateCached, true)
 }
 
 func (b *backend) entryInProgress(id string, res http.ResponseWriter) error {
@@ -286,11 +283,20 @@ func (b *backend) entryInProgress(id string, res http.ResponseWriter) error {
 }
 
 // entryCached writes the contents of the cached file to the response writer
-func (b *backend) entryCached(id string, res http.ResponseWriter) error {
+func (b *backend) entryCached(id string, res http.ResponseWriter, req *http.Request) error {
 	e, ok := b.data[id]
 	if !ok {
 		return ErrEntryNotFound
 	}
+
+	// check if cache entry is already expired
+	if e.expired(b.cacheExpiration) {
+		log.Debugf("Entry %s has expired", id)
+		// if so set to init state and recache
+		b.setEntryState(id, StateInit, true)
+		return b.entryInit(id, res, req)
+	}
+
 	cacheFile, err := os.Open(e.CachedFile)
 	if err != nil {
 		return errors.Wrap(err, "failed to open cached file")

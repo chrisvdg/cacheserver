@@ -8,11 +8,20 @@ import (
 	"github.com/pkg/errors"
 )
 
-const filePerm os.FileMode = 0666
-const dirPerm os.FileMode = 0700
+const (
+	filePerm os.FileMode = 0666
+	dirPerm  os.FileMode = 0700
+)
+
+var (
+	nosave = false
+)
 
 // save writes the current file backend data to the backend file
 func (b *backend) save() error {
+	if nosave {
+		return nil
+	}
 	data, err := json.MarshalIndent(b.data, "", "\t")
 	if err != nil {
 		return errors.Wrap(err, "failed to marshal backend data to json")

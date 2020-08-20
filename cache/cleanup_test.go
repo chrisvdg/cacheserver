@@ -10,6 +10,7 @@ import (
 
 func TestMarkExpired(t *testing.T) {
 	assert := assert.New(t)
+	nosave = true
 
 	b := &backend{
 		cleanupInterval: 1,
@@ -17,36 +18,42 @@ func TestMarkExpired(t *testing.T) {
 		m:               &sync.Mutex{},
 		data: map[string]*Entry{
 			"1": {
-				Status:  StateCached,
-				Created: JSONTime(time.Now()),
-				m:       &sync.Mutex{},
+				Status:   StateCached,
+				InitTime: JSONTime(time.Now()),
+				m:        &sync.Mutex{},
 			},
 			"2": {
-				Status:  StateCached,
-				Created: JSONTime(time.Now().Add(10 * time.Minute)),
-				m:       &sync.Mutex{},
+				Status:   StateCached,
+				InitTime: JSONTime(time.Now().Add(10 * time.Minute)),
+				m:        &sync.Mutex{},
 			},
 			// should expire
 			"3": {
-				Status:  StateCached,
-				Created: JSONTime(time.Now().Local().Add(-15 * time.Minute)),
-				m:       &sync.Mutex{},
+				Status:   StateCached,
+				InitTime: JSONTime(time.Now().Local().Add(-15 * time.Minute)),
+				m:        &sync.Mutex{},
 			},
 			"4": {
-				Status:  StateInit,
-				Created: JSONTime(time.Now().Local().Add(-15 * time.Minute)),
-				m:       &sync.Mutex{},
+				Status:   StateInit,
+				InitTime: JSONTime(time.Now().Local().Add(-15 * time.Minute)),
+				m:        &sync.Mutex{},
 			},
 			"5": {
-				Status:  StateInProgress,
-				Created: JSONTime(time.Now().Local().Add(-15 * time.Minute)),
-				m:       &sync.Mutex{},
+				Status:   StateInProgress,
+				InitTime: JSONTime(time.Now().Local().Add(-15 * time.Minute)),
+				m:        &sync.Mutex{},
 			},
 			// should expire
 			"6": {
-				Status:  StateCached,
-				Created: JSONTime(time.Time{}),
-				m:       &sync.Mutex{},
+				Status:   StateCached,
+				InitTime: JSONTime(time.Time{}),
+				m:        &sync.Mutex{},
+			},
+			// should expire
+			"7": {
+				Status:   StateCached,
+				InitTime: JSONTime(time.Now().Local().Add(-601 * time.Second)),
+				m:        &sync.Mutex{},
 			},
 		},
 	}
@@ -63,7 +70,7 @@ func TestMarkExpired(t *testing.T) {
 	}
 
 	// assert state init
-	for _, i := range []string{"3", "6", "4"} {
+	for _, i := range []string{"3", "4", "6", "7"} {
 		assert.Equal(StateInit, b.data[i].Status)
 	}
 }

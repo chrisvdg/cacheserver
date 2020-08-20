@@ -2,6 +2,7 @@ package cache
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/pkg/errors"
 )
@@ -14,8 +15,8 @@ var (
 // New returns a new Cache instance
 // backendFilePath represents the file on the filesystem where the metadata is stored
 // minSize represents the minimum size of the body to be cached (0 caches everything)
-func New(backendFilePath, cacheDir, proxyURL string, minSize int) (*Cache, error) {
-	b, err := newBackend(backendFilePath, cacheDir, proxyURL)
+func New(backendFilePath, cacheDir, proxyURL string, minSize int, cacheExp, cleanInterval time.Duration) (*Cache, error) {
+	b, err := newBackend(backendFilePath, cacheDir, proxyURL, cacheExp, cleanInterval)
 	if err != nil {
 		return nil, err
 	}
